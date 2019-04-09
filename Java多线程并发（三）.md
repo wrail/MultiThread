@@ -85,41 +85,80 @@ public class ShareThread {
 
 在进行之前来先简单从源码中了解一下ThreadLocal，你会发现它的实现和我们前面的实现惊人的相似。
 
-先看看这些介绍否则后边可能有点懵
+> ThreadLoacl解决的问题是多线程状态下，单个线程的变量共享。
 
-> ThreadLocal类用于存储以线程为作用域的数据，线程之间数据隔离。 
+认清线程同步和ThreadLocal的区别
 
-> ThreadLocalMap类是ThreadLocal的静态内部类，通过操作Entry来存储数据。 
+1. 线程同步是让多个线程共享一个变量
+2. ThreadLocal是为每一个线程创建一个自己所有的并且独立于其他线程的副本。
 
-> Thread类，ThreadLocals是线程存放多个ThreadLocal实例的。。 
+看完源码之后我总结出的几点：
+1. ThreadLocals是一个ThreadLocalMap类型的，它是属于Thread类。就是用来和ThreadLocal来关联，初始值为null。
+2. ThreadMap是ThreadLocal的内部类，通过操作Entity来存储数据。
+3. ThreadLocal是以线程为单个作用域进行数据共享。
+
+先来从ThreadLocal看起：可以看到ThreadLocalMap是ThreadLocal的一个子类。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409154129483.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+打开ThreadLocalMap你会看见里面还嵌套了一个内部类，那就是Entity，它的功能就是以ThreadLocal为键来存储一个值。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409154455400.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+它从父类中拿到ThreadLocal，虽说它的属于ThreadLocalMap，但是它的最终父类为ThreadLocal。因此传入的Key就是当前的ThreadLocal。并且继承于弱引用，GC就可能被清理（关于这部分的GC在以后再详细解说）。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409154614289.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+可以从ThreadLocalMap的构造方法中看出它给子类的Entity间接的把Thread Local传了进去，这种是创建一个最初的ThredLocalMap。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409155110571.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+如果父类映射允许继承的话，就可以创建一个给定的父映射的自映射
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409155535399.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+采用开放定址法，因此key的散列值和数组索引并不完全对应，先取一个探测数（key），如果key是要找的元素就返回否则就return getEntityAfterMiss.
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/201904091557188.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+来到getEntityAfterMiss，在没有找到的时候用它的哈希槽。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409160514911.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+根据负载因子来进行rehash
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409160910425.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+ThreadLocalMap就看到这，现在进入ThreadLoacl，先来看看get方法，根据当前线程获得ThreadLocal，然后获取Entity根据ThreadLocal，并且从Entity取存的value。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409161037389.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+getmap方法是根据Thread和ThreadLocalMap关联来获取的。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409161217264.png)
+
+如果get操作时发现根据currentThread不能获取到ThreadLocalMap的话就返回一个setInitialValue，然后进入到setInitalValue，先进行对ThreadLocalMap进行判空操作，如果ThreadLocalMap不为空那就设置初值，如果为空的话那就先创建一个ThreadLocalMap
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409173228494.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+创建一个新的ThreadLocalMap，也就是说每一个线程刚开始使用ThreadLocal的时候都要先在这里创建一个新的ThreadLocalMap并且赋值给Thread里的threadLocals。因此就可以说threadLocals就是在Thread中对ThreadLocalMap的一个引用。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/2019040917453440.png)
+
+set操作逻辑也和上边大致相似，很简单。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409174932828.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+remove方法，是删除当前线程的ThreadLocalMap。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409175013844.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+
+这个是创建一个子映射根据传入的父映射
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190409175643660.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
 
 
-ThreadLoacl的get方法，很熟悉吧，它根据t（currentThread）来获取一个ThreadLoaclMap，如果这个mao非空，就说明当前线程由数据，因此根据this（也就是currentThread）来生成一个Entity，如果Entity不空的话，就返回。如果根据this（currentThread）筛选map为空（也就是map中没有当前线程的东西），那它就return setInitialValue（），来根据this（currentThread）给ThreadLocalMap中加一条当前线程的信息。
-
-> ThreadLocal首先通过当前线程t得到threadLocals，然后把自身this作为key，从threadLocals中得到存储在线程本地的相关的数据
-
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20190408223437439.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
-
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20190408231744598.png)
-
-
-> 通过一个弱引用维持关系
-
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20190408225152535.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
-
-
-进入setInitialValue 看一看，可以看到它再次根据currentThread判断的是根据t来判断是否存在这样一个map，存在的话就初始化value位null，不存在就创建一个
-
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20190408224612761.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
-
-根据传入的currentThread来创建一个map加入到保存threadLocals（保存当前线程一些线程独有的信息）的集合里。
-
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20190408225435682.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
-
-
-> 一个 ThreadLocal对象只对应一个值对象 ,多个ThreadLocal对象和相应的值存在线程中类型为ThreadLocalMap类型的threadLocals变量中
-
-说了这么多，心里都糊涂了吧，看看代码提提神！
+下边就是应用的实例
 
 ```
 
