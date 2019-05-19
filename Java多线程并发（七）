@@ -1,0 +1,352 @@
+## 1.CountDownLatch
+通过维护一个计数器来完成计数等待操作。必须使得count计数器到达0或者是超时才能向下执行（await）。下边就用简单的例子来进行演示
+```
+@Slf4j
+public class CountDownLatchExample {
+     
+     //设置线程数200
+    private static final int count = 200;
+
+    public static void test(int threadNum) throws InterruptedException {
+
+        Thread.sleep(100);
+        log.info("{}", threadNum);
+        Thread.sleep(100);
+
+
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        ExecutorService exc = Executors.newCachedThreadPool();
+         //new一个CountDownLatch并传入count：200
+        CountDownLatch countDownLatch = new CountDownLatch(count);
+        //循环200次，创建200个线程
+        for (int i = 0; i < count; i++) {
+            final int num = i;
+            exc.execute(() -> {
+                try {
+                    test(num);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } finally {
+                    //保证肯定会执行，在其他情况可以在某些条件下才会countdown
+                    countDownLatch.countDown();
+                }
+            });
+        }
+        //可以保证前面的执行完，对count=0进行校验，只有校验成功才会执行下一步就是打印finish
+        countDownLatch.await();
+        log.info("finish");
+        exc.shutdown();
+
+    }
+}
+
+```
+使用带有定时的await方法，如果超时就不管了继续执行。
+```
+/*
+ * 规定任务事件，如果没按时完成就不管了
+ * */
+@Slf4j
+public class CountDownLatchExample2 {
+
+    private static final int conutThrad = 200;
+
+    public static void test(int count) throws Exception{
+         //线程中的方法，设置1s的睡眠，占用时间（可以当作一些程序的运作时间）
+        Thread.sleep(1000);
+        log.info("{}", count);
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+
+        ExecutorService exc = Executors.newCachedThreadPool();
+        CountDownLatch countDownLatch = new CountDownLatch(conutThrad);
+        for (int i = 0; i < conutThrad; i++) {
+            final int count = i;
+            exc.execute(() -> {
+                try {
+                    test(count);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    countDownLatch.countDown();
+                }
+            });
+        }
+        //设置1s超时，没有在1s内countdown的线程就赶不上了
+        countDownLatch.await(1,TimeUnit.SECONDS);
+        log.info("Finish");
+        exc.shutdown();
+    }
+
+}
+```
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190519225741689.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+超时时间设置为1100发现全部都可以执行完
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190519230131274.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+超时时间设置为500毫秒，可以看到都执行不完就提交了
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190519230251619.png)
+## 2.CyclicBarrier
+称为同步屏障，可以做的事情就是让不同速度执行的线程在某一个同步屏障外（同步点）等待其他线程执行完，然后才能继续。听起来和CountDownLatch有点相似，其实它和CountDownLatch存在很多的不同点。先看看下边的例子。
+```
+/*
+ * 使用CycliBarrier
+ * */
+@Slf4j
+public class CyclicBarrierExample1 {
+
+     //设置需要等待同步的线程数为5
+    private static CyclicBarrier cyclicBarrier = new CyclicBarrier(5);
+    //定义20个线程
+    private static int threadCount = 20;
+
+    public static void runAndWait(int num) throws Exception {
+        Thread.sleep(100);
+        //同步前
+        log.info("{} is comming", num);
+        //使用await，可以对计数器进行减一
+        cyclicBarrier.await();
+        //只有await满足条件才能执行，也就是满足到达同步点（5个线程）才能继续执行
+        log.info("{} is going", num);
+    }
+    public static void main(String[] args) throws Exception {
+
+        ExecutorService exe = Executors.newCachedThreadPool();
+        for (int i = 0; i < threadCount; i++) {
+            Thread.sleep(100);
+            final int num = i;
+            exe.execute(() -> {
+                try {
+                    runAndWait(num);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+        }
+        exe.shutdown();
+    }
+}
+
+```
+可以明显看到，是分段的，每到达一次同步点，就执行一次。
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190519231158198.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+使用带有超时await操作，超时会报异常，只有处理了异常才能继续下去。
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190519232148545.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+也可以设置到达屏障并且穿过屏障时可以传入一个Runnable对象，可以在到达屏障的所有线程或程序前执行
+```
+/*
+ * 使用CyclicBarrier,并传入Runable
+ * */
+@Slf4j
+public class CyclicBarrierExample3 {
+
+    //传入的Runnable是在到达屏障后，第一个执行
+    private static CyclicBarrier cyclicBarrier = new CyclicBarrier(5, () -> {
+       log.info("I Am The First Runnable Will Be Do ");
+    });
+
+    private static int threadCount = 20;
+
+    public static void runAndWait(int num) throws Exception {
+        Thread.sleep(100);
+        log.info("{} is comming", num);
+        cyclicBarrier.await();
+        log.info("{} is going", num);
+
+    }
+
+    public static void main(String[] args) throws Exception {
+        ExecutorService exe = Executors.newCachedThreadPool();
+        for (int i = 0; i < threadCount; i++) {
+            Thread.sleep(1000);
+            final int num = i;
+            exe.execute(() -> {
+                try {
+                    runAndWait(num);
+                } catch (Exception e) {
+
+                }
+            });
+        }
+        exe.shutdown();
+    }
+
+}
+
+```
+![在这里插入图片描述](https://img-blog.csdnimg.cn/2019051923255241.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+可以看到CyclicBarrier比CountDownLatch强大，并且CyclicBarrier可以支持计数器重置（reset）。
+
+* 一个或者多个线程，等待其他多个线程完成某件事情之后才能执行；
+> 对于CountDownLatch来说，重点是“一个线程（多个线程）等待”，而其他的N个线程在完成“某件事情”之后，可以终止，也可以等待。
+* 多个线程互相等待，直到到达同一个同步点，再继续一起执行。
+> 对于CyclicBarrier，重点是多个线程，在任意一个线程没有完成，所有的线程都必须等待。
+## 3.Semaphore
+信号量，也就是标志着某个临界区资源的最大可使用量，因此可以通过信号量来给线程分配资源并进行并发控制。也可以这么说，就是在某个时间点，某个临界区资源只能被多少个线程占有，这就取决于信号量的大小。
+```
+/*
+ * 信号量的使用
+ * */
+@Slf4j
+public class SemaphoreExample1 {
+
+    private static final int conutThrad = 30;
+
+    public static void test(int count) throws InterruptedException {
+        Thread.sleep(1000);
+        log.info("{}", count);
+    }
+    public static void main(String[] args) throws InterruptedException {
+
+        ExecutorService exc = Executors.newCachedThreadPool();
+        final Semaphore semaphore = new Semaphore(3);//定义资源运行最大并发量为20
+        for (int i = 0; i < conutThrad; i++) {
+            final int count = i;
+            exc.execute(() -> {
+                try {
+                    semaphore.acquire();//获得一个许可,也可以获取多个许可
+                    test(count);
+                    semaphore.release();//释放一个许可，也可以释放多个许可
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            });
+        }
+        exc.shutdown();
+    }
+}
+
+```
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190519233844225.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+当然，也有tryAcquire方法，可以采取超时舍弃，或者如果不能使用就直接舍弃。
+```
+@Slf4j
+public class SemaphoreExample2{
+
+    private static final int conutThrad = 30;
+
+    public static void test(int count) throws InterruptedException {
+        Thread.sleep(1000);
+        log.info("{}", count);
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+
+        ExecutorService exc = Executors.newCachedThreadPool();
+        final Semaphore semaphore = new Semaphore(3);//定义资源运行最大并发量为20
+        for (int i = 0; i < conutThrad; i++) {
+            final int count = i;
+            exc.execute(() -> {
+                try {
+                
+                    //能获取到信号量的就可以使用，获取不到就舍弃
+//                    if (semaphore.tryAcquire()) {
+//                        test(count);
+//                        semaphore.release();//释放一个许可，也可以释放多个许可
+//                    }
+
+                    //可以传入参数，设置信号量的超时时间，针对于多线程
+//                    if (semaphore.tryAcquire(5, TimeUnit.SECONDS)) {
+//                        test(count);
+//                        semaphore.release();
+//                    }
+
+                    if (semaphore.tryAcquire(3,5, TimeUnit.SECONDS)) {
+                        test(count);
+                        semaphore.release(3);
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            });
+        }
+        exc.shutdown();
+    }
+
+}
+
+```
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190519234418641.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+## 4.Future和FutureTask
+Future就是可以获得通过Callable中的Call返回的的信息，因此这也是Callable比Runable多的一个功能。
+```
+@Slf4j
+public class FutureExample {
+     //要定义为静态内部类，实现Callable接口，当然也可以直接匿名传进submit
+     static class MyCallable implements Callable {
+        @Override
+        public String call() throws Exception {
+            log.info("Do Some Things in callable!");
+            Thread.sleep(4000);
+            return "Callable Things Done";
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+
+        ExecutorService exe = Executors.newCachedThreadPool();
+        //使用Callable返回Future对象
+        Future future = exe.submit(new MyCallable());
+        log.info("do some thing in main");
+        Thread.sleep(1000);
+        //如果获取不到就一直阻塞
+        String mes = (String) future.get();
+        log.info("{}", mes);
+        log.info("main done");
+        exe.shutdown();
+    }
+}
+
+```
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190519234923186.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
+FutureTask使用
+```
+@Slf4j
+public class FutureTaskExample {
+
+    public static void main(String[] args) throws InterruptedException, ExecutionException {
+
+/*
+        new Thread(new FutureTask<String>(new Callable<String>() {
+            @Override
+            public String call() throws Exception {
+                log.info("Do Something in Callable!");
+                Thread.sleep(5000);
+                return "All Things Done";
+            }
+        })).start();
+
+ */
+        FutureTask futureTask = new FutureTask(new Callable<String>() {
+            @Override
+            public String call() throws Exception {
+                log.info("Do Something in Callable!");
+                Thread.sleep(5000);
+                return "All Things Done";
+            }
+        });
+
+/*
+        FutureTask futureTask1 = new FutureTask(new Runnable() {
+            @Override
+            public void run() {
+                System.out.println();
+            }
+        },"Sssssss");
+*/
+
+        new Thread(futureTask).start();
+        log.info("main is doing some things");
+        
+        String result = (String) futureTask.get();
+
+        log.info("{}", result);
+        Thread.sleep(1000);
+        log.info("main is done");
+    }
+}
+
+```
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20190519235130831.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQyNjA1OTY4,size_16,color_FFFFFF,t_70)
